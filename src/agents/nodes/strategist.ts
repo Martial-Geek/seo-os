@@ -94,22 +94,39 @@ interface StrategistOutput {
 
 function formatAnalysisForPrompt(observations: AgentObservation[]): string {
   const analysis = observations.find((o) => o.type === 'analysis')
+  const inventory = observations.find((o) => o.type === 'content_inventory')
+
+  let text = ''
+
   if (analysis) {
-    return JSON.stringify(analysis.data, null, 2).substring(0, 6000)
+    text += JSON.stringify(analysis.data, null, 2).substring(0, 5000)
+  } else if (observations.length > 0) {
+    const raw = observations
+      .filter((o) => o.type !== 'analysis')
+      .slice(0, 12)
+      .map((o) => `### ${o.source} / ${o.type}\n${JSON.stringify(o.data, null, 2).substring(0, 2500)}`)
+      .join('\n\n')
+    text += 'No structured analysis — using raw collector data.\n\n' + raw
+  } else {
+    return 'No analysis data available.'
   }
-  if (observations.length === 0) return 'No analysis data available.'
-  const raw = observations
-    .filter((o) => o.type !== 'analysis')
-    .slice(0, 12)
-    .map(
-      (o) =>
-        `### ${o.source} / ${o.type}\n${JSON.stringify(o.data, null, 2).substring(0, 2500)}`
-    )
-    .join('\n\n')
-  return (
-    'No structured analysis observation for this run. Use the raw collector observations below.\n\n' +
-    raw
-  ).substring(0, 6000)
+
+  // Append available Sanity slugs so the model can reference real documents
+  if (inventory) {
+    const posts = (inventory.data as Record<string, unknown>)['posts']
+    if (Array.isArray(posts) && posts.length > 0) {
+      const slugList = (posts as Array<Record<string, unknown>>)
+        .slice(0, 30)
+        .map((p) => {
+          const slug = (p['slug'] as Record<string, unknown>)?.['current'] ?? p['slug']
+          return `  - slug: "${slug}"  _id: "${p['_id']}"  title: "${p['title']}"`
+        })
+        .join('\n')
+      text += `\n\n## Existing Sanity Documents (use these exact slug/id values for UPDATE_METADATA external_id)\n${slugList}`
+    }
+  }
+
+  return text.substring(0, 7000)
 }
 
 function validateActionType(type: string): ActionType | null {
@@ -150,11 +167,9 @@ ${Object.values(ActionType).join(', ')}
 
 ## Action Payload Schemas
 - CREATE_BLOG: { title: string, slug: "kebab-case-string", outline: "single markdown string with all sections", target_keywords: string[], meta_description: string (max 160 chars), word_count_target: number, internal_links: string[] (URL strings only, e.g. ["/blog/related-post"]) }
-- UPDATE_METADATA: { external_id: "real Sanity doc _id or slug", title?: string, meta_description?: string (max 160 chars), og_title?: string, og_description?: string }
+- UPDATE_METADATA: { external_id: "_id from the Existing Sanity Documents list above", title?: string, meta_description?: string (max 160 chars), og_title?: string, og_description?: string }
 - GENERATE_OUTLINE: { title: string, target_keywords: string[], section_count: number, word_count_target: number, content_type: "how-to"|"listicle"|"pillar"|"comparison"|"review"|"news"|"guide"|"case-study" }
-- ADD_INTERNAL_LINKS: { source_id: "Sanity doc _id", links: [{ target_id: "Sanity doc _id", anchor_text: string, position: number }] }
-
-IMPORTANT: For UPDATE_METADATA, only use external_id values that appear verbatim in the content inventory data above. Do not invent slugs.
+- ADD_INTERNAL_LINKS: { source_id: "_id from the Existing Sanity Documents list above", links: [{ target_id: "_id from list", anchor_text: string, position: number }] }
 
 Call the tool ${STRATEGIST_TOOL_NAME} once with your full output. Do not emit raw JSON in plain text.`
 
