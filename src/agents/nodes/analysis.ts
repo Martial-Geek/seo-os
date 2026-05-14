@@ -6,6 +6,20 @@ import { randomUUID } from 'crypto'
 
 const anthropic = new Anthropic()
 
+// SEO_AGENT_MODEL=claude-haiku-4-5-20251001 to use a cheaper model during development
+const AGENT_MODEL = process.env.SEO_AGENT_MODEL ?? 'claude-sonnet-4-6'
+
+function extractJSON(text: string): string {
+  // Strip markdown code fences
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/s)
+  if (fenceMatch?.[1]) return fenceMatch[1].trim()
+  // Fall back to outermost { … }
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end > start) return text.slice(start, end + 1)
+  throw new Error('No JSON found in analysis response')
+}
+
 interface AnalysisResult {
   keyword_opportunities: Array<{
     keyword: string
@@ -105,8 +119,8 @@ Be specific and data-driven. Reference actual numbers from the data. Only includ
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      model: AGENT_MODEL,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -115,13 +129,7 @@ Be specific and data-driven. Reference actual numbers from the data. Only includ
       throw new Error('No text content in response')
     }
 
-    // Extract JSON from response
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('No JSON found in analysis response')
-    }
-
-    const analysis = JSON.parse(jsonMatch[0]) as AnalysisResult
+    const analysis = JSON.parse(extractJSON(textContent.text)) as AnalysisResult
 
     // Create analysis observations
     const analysisObs: AgentObservation = {
@@ -148,10 +156,14 @@ Be specific and data-driven. Reference actual numbers from the data. Only includ
     )
 
     return {
-      observations: [...state.observations, analysisObs],
+      observations: [analysisObs],
     }
   } catch (err) {
     console.error('[analysisNode] Error:', err)
+
+    const errMsg = err instanceof Error ? err.message : String(err)
+    const isBilling =
+      /credit balance is too low|billing|purchase credits|Plans & Billing/i.test(errMsg)
 
     // Return a minimal analysis observation so the graph can continue
     const fallbackObs: AgentObservation = {
@@ -163,14 +175,16 @@ Be specific and data-driven. Reference actual numbers from the data. Only includ
         content_gaps: [],
         performance_issues: [],
         cannibalization_risks: [],
-        summary: 'Analysis could not be completed due to an error.',
-        error: err instanceof Error ? err.message : String(err),
+        summary: isBilling
+          ? 'Analysis skipped: Anthropic API reports insufficient account credits. Add credits or upgrade billing at console.anthropic.com, then re-run.'
+          : 'Analysis could not be completed due to an error.',
+        error: errMsg,
       },
       createdAt: new Date(),
     }
 
     return {
-      observations: [...state.observations, fallbackObs],
+      observations: [fallbackObs],
     }
   }
 }

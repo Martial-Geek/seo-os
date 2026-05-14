@@ -32,7 +32,7 @@ export async function approvalNode(
     const shouldAutoApprove = autoApproveLowRisk && isLowRisk && !action.requiresApproval
 
     if (shouldAutoApprove) {
-      // Auto-approve low risk actions
+      // Auto-approve low risk actions (only when AUTO_APPROVE_LOW_RISK=true)
       const updated: AgentProposedAction = {
         ...action,
         status: 'approved',
@@ -49,24 +49,6 @@ export async function approvalNode(
 
       console.log(
         `[approvalNode] Auto-approved low-risk action: ${action.actionType} (${action.id})`
-      )
-    } else if (!action.requiresApproval) {
-      // Actions that don't require approval are auto-approved
-      const updated: AgentProposedAction = {
-        ...action,
-        status: 'approved',
-      }
-      updatedActions.push(updated)
-
-      if (runId) {
-        await db
-          .update(proposedActions)
-          .set({ status: 'approved', updatedAt: new Date() })
-          .where(eq(proposedActions.id, action.id))
-      }
-
-      console.log(
-        `[approvalNode] Approved action (no approval required): ${action.actionType} (${action.id})`
       )
     } else {
       // Mark as pending — waiting for human approval

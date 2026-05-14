@@ -1,14 +1,23 @@
 import db from '@/db'
-import { agentRuns, observations, proposedActions, executedActions } from '@/db/schema'
+import {
+  agentRuns,
+  observations,
+  proposedActions,
+  executedActions,
+  type MemoryEntry,
+} from '@/db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RunActionCard } from '@/components/runs/run-action-card'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { StartRunExecutionButton } from '@/components/runs/start-run-execution-button'
+import { GenerateProposalsButton } from '@/components/runs/generate-proposals-button'
+import { MemoryService } from '@/lib/memory/memory-service'
 
 type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -44,17 +53,34 @@ function sourceBadge(source: string) {
   )
 }
 
+type InsightValue = {
+  title?: string
+  description?: string
+  rationale?: string
+  estimated_impact?: 'low' | 'medium' | 'high'
+  category?: string
+  created_at?: string
+}
+
+function insightImpactClass(impact: InsightValue['estimated_impact']) {
+  if (impact === 'high') return 'bg-green-500/20 text-green-400 border-green-500/30'
+  if (impact === 'low') return 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+  return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+}
+
 export default async function RunDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  if (!id || id === 'undefined') notFound()
 
   let run: typeof agentRuns.$inferSelect | undefined
   let runObservations: (typeof observations.$inferSelect)[] = []
   let runProposedActions: (typeof proposedActions.$inferSelect)[] = []
   let runExecutedActions: (typeof executedActions.$inferSelect)[] = []
+  let runStrategicInsights: MemoryEntry[] = []
 
   try {
     const result = await db.select().from(agentRuns).where(eq(agentRuns.id, id)).limit(1)
@@ -87,6 +113,11 @@ export default async function RunDetailPage({
       .orderBy(desc(executedActions.executedAt))
   } catch {}
 
+  try {
+    const memoryService = new MemoryService(db)
+    runStrategicInsights = await memoryService.getStrategicInsightsForRun(id)
+  } catch {}
+
   const pendingCount = runProposedActions.filter((a) => a.status === 'pending').length
 
   return (
@@ -111,17 +142,40 @@ export default async function RunDetailPage({
               ` · Completed ${formatDistanceToNow(new Date(run.completedAt), { addSuffix: true })}`}
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/conversations">
-            <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
-            View Conversations
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-end justify-end gap-3">
+          <GenerateProposalsButton
+            runId={run.id}
+            status={run.status as RunStatus}
+            hasObservations={runObservations.length > 0}
+          />
+          <StartRunExecutionButton runId={run.id} status={run.status as RunStatus} />
+          <Button asChild variant="outline" size="sm">
+            <Link href="/conversations">
+              <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+              View Conversations
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {run.error && (
         <div className="rounded-md bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
           <strong>Error:</strong> {run.error}
+        </div>
+      )}
+
+      {(run.status === 'pending' || run.status === 'failed') && (
+        <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Execution</p>
+          <p className="mt-1">
+            <strong className="font-medium text-foreground">New Run</strong> normally starts the
+            agent right after the run is created. If this row stayed{' '}
+            <span className="font-mono text-xs">pending</span>, use{' '}
+            <strong className="font-medium text-foreground">Start execution</strong> above, then
+            refresh. You should see <span className="font-mono text-xs">running</span>, then{' '}
+            <span className="font-mono text-xs">completed</span> or{' '}
+            <span className="font-mono text-xs">failed</span> (check the error panel if it fails).
+          </p>
         </div>
       )}
 
@@ -131,6 +185,11 @@ export default async function RunDetailPage({
           <TabsTrigger value="observations">
             Observations ({runObservations.length})
           </TabsTrigger>
+          {runStrategicInsights.length > 0 && (
+            <TabsTrigger value="insights">
+              Run insights ({runStrategicInsights.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="proposed">
             Proposed Actions ({runProposedActions.length})
             {pendingCount > 0 && (
@@ -157,6 +216,54 @@ export default async function RunDetailPage({
             ))
           )}
         </TabsContent>
+
+        {runStrategicInsights.length > 0 && (
+          <TabsContent value="insights" className="space-y-3 mt-4">
+            <p className="text-xs text-muted-foreground">
+              Strategic suggestions stored for this run (from the strategist). Refresh after
+              &quot;Generate proposals&quot; if you just triggered a pass.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {runStrategicInsights.map((entry) => {
+                const val = (entry.value ?? {}) as InsightValue
+                const impact = val.estimated_impact ?? 'medium'
+                const createdAt = val.created_at
+                  ? new Date(val.created_at)
+                  : new Date(entry.createdAt)
+                return (
+                  <Card key={entry.id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <CardTitle className="text-sm font-semibold leading-tight">
+                          {val.title ?? entry.key}
+                        </CardTitle>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${insightImpactClass(impact)}`}
+                        >
+                          {impact} impact
+                        </span>
+                      </div>
+                      {val.category && (
+                        <span className="text-xs text-muted-foreground">{val.category}</span>
+                      )}
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {val.description && (
+                        <p className="text-muted-foreground">{val.description}</p>
+                      )}
+                      {val.rationale && (
+                        <p className="text-xs text-muted-foreground line-clamp-4">{val.rationale}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(createdAt, { addSuffix: true })}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </TabsContent>
+        )}
 
         {/* Proposed Actions */}
         <TabsContent value="proposed" className="space-y-3 mt-4">

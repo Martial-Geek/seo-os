@@ -1,4 +1,4 @@
-import { eq, desc, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, like, or, sql } from 'drizzle-orm'
 import type { db as DbType } from '@/db'
 import { memoryEntries, observations } from '@/db/schema'
 import type { MemoryEntry } from '@/db/schema'
@@ -142,5 +142,24 @@ export class MemoryService {
       .limit(200)
 
     return results.map((r) => r.key)
+  }
+
+  /** Strategic insights tied to a specific agent run (see strategist / memory upsert keys). */
+  async getStrategicInsightsForRun(runId: string): Promise<MemoryEntry[]> {
+    const keyPrefix = `strategic_insight:run:${runId}:`
+
+    return this.db
+      .select()
+      .from(memoryEntries)
+      .where(
+        and(
+          eq(memoryEntries.category, 'strategic_insight'),
+          or(
+            like(memoryEntries.key, `${keyPrefix}%`),
+            sql`(${memoryEntries.value}->>'run_id') = ${runId}`
+          )
+        )
+      )
+      .orderBy(desc(memoryEntries.createdAt))
   }
 }

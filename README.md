@@ -89,6 +89,15 @@ All fall back to mock data if env vars not set:
 - **Analytics**: `GA_PROPERTY_ID`, `GA_CREDENTIALS_JSON`
 - **Sanity**: `SANITY_PROJECT_ID`, `SANITY_DATASET`, `SANITY_API_TOKEN`
 
+### Google OAuth scopes (refresh token)
+
+`GOOGLE_REFRESH_TOKEN` is issued for the scopes you requested at consent time. If Search Console returns **403 insufficient authentication scopes**, the token does not include Search Console.
+
+- **Search Console (this app)**: `https://www.googleapis.com/auth/webmasters.readonly`
+- **Google Analytics Data API** (if you use the same refresh token for Analytics): `https://www.googleapis.com/auth/analytics.readonly`
+
+Re-run your OAuth flow (e.g. OAuth 2.0 Playground or a small script) with the full scope list you need, then replace `GOOGLE_REFRESH_TOKEN` in `.env`. Tokens only carry scopes granted during authorization; adding a scope in Google Cloud Console alone is not enough.
+
 ## Commands
 
 ```bash

@@ -11,31 +11,40 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid run id' }, { status: 400 })
     }
 
-    const run = await agentService.getRun(id)
-    if (!run) {
+    const details = await agentService.getRunWithDetails(id)
+    if (!details) {
       return NextResponse.json({ error: 'Run not found' }, { status: 404 })
     }
 
+    const { run } = details
+
     if (run.status === 'running') {
-      return NextResponse.json({ error: 'This run is already executing' }, { status: 409 })
-    }
-    if (run.status === 'completed' || run.status === 'cancelled') {
       return NextResponse.json(
-        { error: `Cannot start execution for a ${run.status} run` },
+        { error: 'This run is already executing' },
         { status: 409 }
+      )
+    }
+
+    if (details.observations.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'No observations for this run yet. Finish collection and analysis first, then try again.',
+        },
+        { status: 400 }
       )
     }
 
     after(async () => {
       try {
-        await agentService.executeRun(id)
+        await agentService.runProposalsFromRunObservations(id)
       } catch (err) {
-        console.error(`[POST /api/runs/${id}/execute] executeRun failed:`, err)
+        console.error(`[POST /api/runs/${id}/proposals] runProposalsFromRunObservations failed:`, err)
       }
     })
 
     return NextResponse.json(
-      { message: 'Execution started', runId: id },
+      { message: 'Proposal generation started', runId: id },
       { status: 202 }
     )
   } catch (err) {

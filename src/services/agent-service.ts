@@ -18,7 +18,18 @@ import type {
 import { MemoryService } from '@/lib/memory/memory-service'
 import { executeAction } from '@/lib/tools/registry'
 import { runSEOAgent } from '@/agents/graphs/seo-graph'
-import type { ActionType, TriggerType } from '@/types'
+import { memoryNode } from '@/agents/nodes/memory'
+import { strategistNode } from '@/agents/nodes/strategist'
+import { plannerNode } from '@/agents/nodes/planner'
+import { approvalNode } from '@/agents/nodes/approval'
+import type {
+  ActionType,
+  TriggerType,
+  AgentState,
+  AgentObservation,
+  RiskLevel,
+  ProposedActionStatus,
+} from '@/types'
 
 // ─── Run Details Type ──────────────────────────────────────────────────────────
 
@@ -234,6 +245,101 @@ export class AgentService {
 
     console.log(
       `[AgentService] Rejected action ${proposedActionId} by ${decidedBy}`
+    )
+  }
+
+  /**
+   * Runs strategist → planner → approval using observations already stored for this run.
+   * Persists new strategic insights to memory and inserts additional proposed_actions rows.
+   */
+  async runProposalsFromRunObservations(runId: string): Promise<void> {
+    const run = await this.getRun(runId)
+    if (!run) throw new Error('Run not found')
+    if (run.status === 'running') {
+      throw new Error('This run is already executing; wait for it to finish')
+    }
+
+    const obsRows = await db
+      .select()
+      .from(observations)
+      .where(eq(observations.runId, runId))
+
+    if (obsRows.length === 0) {
+      throw new Error('No observations recorded for this run yet')
+    }
+
+    const proposedRows = await db
+      .select()
+      .from(proposedActions)
+      .where(eq(proposedActions.runId, runId))
+
+    const memoryPartial = await memoryNode({
+      observations: [],
+      proposed_actions: [],
+      strategic_suggestions: [],
+      memory_context: {
+        recent_topics: [],
+        rejected_suggestions: [],
+        strategic_insights: [],
+        action_history: [],
+      },
+      conversation_history: [],
+      current_run_id: runId,
+      run_metadata: {
+        trigger_type: run.triggerType as TriggerType,
+        started_at: run.startedAt ?? new Date(),
+        completed_at: run.completedAt,
+        observations_count: obsRows.length,
+        actions_proposed: proposedRows.length,
+        actions_executed: 0,
+      },
+    } as AgentState)
+
+    if (!memoryPartial.memory_context) {
+      throw new Error('Failed to load memory context')
+    }
+
+    const agentObservations: AgentObservation[] = obsRows.map((o) => ({
+      id: o.id,
+      source: o.source as AgentObservation['source'],
+      type: o.type,
+      data: (o.data ?? {}) as Record<string, unknown>,
+      createdAt: o.createdAt,
+    }))
+
+    const existingProposed = proposedRows.map((p) => ({
+      id: p.id,
+      actionType: p.actionType as ActionType,
+      payload: (p.payload ?? {}) as Record<string, unknown>,
+      riskLevel: p.riskLevel as RiskLevel,
+      status: p.status as ProposedActionStatus,
+      requiresApproval: p.requiresApproval,
+      reasoning: p.reasoning ?? undefined,
+    }))
+
+    let state: AgentState = {
+      observations: agentObservations,
+      proposed_actions: existingProposed,
+      strategic_suggestions: [],
+      memory_context: memoryPartial.memory_context,
+      conversation_history: [],
+      current_run_id: runId,
+      run_metadata: {
+        trigger_type: run.triggerType as TriggerType,
+        started_at: run.startedAt ?? new Date(),
+        completed_at: run.completedAt,
+        observations_count: obsRows.length,
+        actions_proposed: proposedRows.length,
+        actions_executed: 0,
+      },
+    }
+
+    Object.assign(state, await strategistNode(state))
+    Object.assign(state, await plannerNode(state))
+    Object.assign(state, await approvalNode(state))
+
+    console.log(
+      `[AgentService] Proposal pipeline for run ${runId}: ${state.proposed_actions.length} proposed actions in graph state`
     )
   }
 

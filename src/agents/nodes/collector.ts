@@ -32,32 +32,13 @@ export async function collectorNode(
 
   const newObservations: AgentObservation[] = []
 
-  // Fetch all data sources in parallel
-  const [searchConsoleResult, analyticsResult, sanityResult] = await Promise.allSettled([
-    toolRegistry.execute<
-      { siteUrl: string; startDate: string; endDate: string; dimensions: string[] },
-      SearchConsoleData
-    >('search_console', { siteUrl, startDate, endDate, dimensions: ['query'] }),
+  // Search Console first: when OAuth is configured, failures abort the run (no LLM / downstream work).
+  const scData = await toolRegistry.execute<
+    { siteUrl: string; startDate: string; endDate: string; dimensions: string[] },
+    SearchConsoleData
+  >('search_console', { siteUrl, startDate, endDate, dimensions: ['query'] })
 
-    toolRegistry.execute<
-      { propertyId: string; startDate: string; endDate: string; metrics: string[] },
-      AnalyticsData
-    >('analytics', {
-      propertyId,
-      startDate,
-      endDate,
-      metrics: ['sessions', 'pageviews', 'bounceRate', 'avgSessionDuration'],
-    }),
-
-    toolRegistry.execute<
-      { projectId?: string; dataset?: string; query?: string },
-      SanityContent[]
-    >('sanity', {}),
-  ])
-
-  // Process Search Console data
-  if (searchConsoleResult.status === 'fulfilled') {
-    const scData = searchConsoleResult.value
+  {
     const obs: AgentObservation = {
       id: randomUUID(),
       source: 'search_console',
@@ -75,9 +56,24 @@ export async function collectorNode(
     })
 
     console.log(`[collectorNode] Collected ${scData.queries.length} queries from Search Console`)
-  } else {
-    console.error('[collectorNode] Search Console failed:', searchConsoleResult.reason)
   }
+
+  const [analyticsResult, sanityResult] = await Promise.allSettled([
+    toolRegistry.execute<
+      { propertyId: string; startDate: string; endDate: string; metrics: string[] },
+      AnalyticsData
+    >('analytics', {
+      propertyId,
+      startDate,
+      endDate,
+      metrics: ['sessions', 'pageviews', 'bounceRate', 'avgSessionDuration'],
+    }),
+
+    toolRegistry.execute<
+      { projectId?: string; dataset?: string; query?: string },
+      SanityContent[]
+    >('sanity', {}),
+  ])
 
   // Process Analytics data
   if (analyticsResult.status === 'fulfilled') {
@@ -128,6 +124,6 @@ export async function collectorNode(
   }
 
   return {
-    observations: [...state.observations, ...newObservations],
+    observations: newObservations,
   }
 }

@@ -38,9 +38,13 @@ export function NewRunButton() {
         throw new Error(data.error ?? 'Failed to create run')
       }
 
-      const { id } = await createRes.json()
+      const data = (await createRes.json()) as { id?: string; runId?: string }
+      const runId = data.runId ?? data.id
+      if (!runId) {
+        throw new Error('Server did not return a run id')
+      }
 
-      const execRes = await fetch(`/api/runs/${id}/execute`, {
+      const execRes = await fetch(`/api/runs/${runId}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
@@ -51,7 +55,7 @@ export function NewRunButton() {
       }
 
       setOpen(false)
-      router.push(`/runs/${id}`)
+      router.push(`/runs/${runId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {

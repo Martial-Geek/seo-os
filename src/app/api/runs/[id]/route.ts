@@ -7,6 +7,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!id || id === 'undefined') {
+      return NextResponse.json({ error: 'Invalid run id' }, { status: 400 })
+    }
     const run = await agentService.getRunWithDetails(id)
 
     if (!run) {

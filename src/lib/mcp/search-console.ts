@@ -76,6 +76,41 @@ async function refreshGoogleToken(): Promise<string> {
   return data.access_token
 }
 
+/** Host from a URL-prefix style site URL (for Domain-property hint text). */
+function siteUrlHostname(siteUrl: string): string | null {
+  if (siteUrl.startsWith('sc-domain:')) return null
+  try {
+    const u = siteUrl.includes('://') ? siteUrl : `https://${siteUrl}`
+    const host = new URL(u).hostname
+    return host || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 403 responses mean different things; avoid blaming OAuth scopes when the issue is
+ * property URL shape (sc-domain: vs https://) or Search Console user access.
+ */
+function searchConsole403Hint(errorBodies: string, siteUrl: string): string {
+  const t = errorBodies.toLowerCase()
+  if (
+    t.includes('access_token_scope_insufficient') ||
+    t.includes('insufficient authentication scopes')
+  ) {
+    return ' Hint: add OAuth scope https://www.googleapis.com/auth/webmasters.readonly, re-consent, and update GOOGLE_REFRESH_TOKEN.'
+  }
+  if (t.includes('does not have sufficient permission for site')) {
+    const host = siteUrlHostname(siteUrl)
+    const domainPropertyTip =
+      host && (siteUrl.startsWith('http://') || siteUrl.startsWith('https://'))
+        ? ` If Search Console shows a Domain property for "${host}", set SEARCH_CONSOLE_SITE_URL=sc-domain:${host} (the API site URL must match the property type).`
+        : ''
+    return ` Hint: the signed-in Google account must have access (Owner or Full user) to this exact property string in the API.${domainPropertyTip} See https://support.google.com/webmasters/answer/2451999`
+  }
+  return ' Hint: verify SEARCH_CONSOLE_SITE_URL matches Search Console (Domain property: sc-domain:example.com; URL-prefix: https://example.com/ often with trailing slash).'
+}
+
 export class SearchConsoleMCPTool implements MCPTool<SearchConsoleInput, SearchConsoleData> {
   name = 'search_console'
   description = 'Fetches Google Search Console performance data including queries and pages'
@@ -128,7 +163,23 @@ export class SearchConsoleMCPTool implements MCPTool<SearchConsoleInput, SearchC
       ])
 
       if (!queriesRes.ok || !pagesRes.ok) {
-        throw new Error('Search Console API request failed')
+        const qBody = queriesRes.ok ? '' : await queriesRes.text()
+        const pBody = pagesRes.ok ? '' : await pagesRes.text()
+        const parts: string[] = []
+        if (!queriesRes.ok) {
+          parts.push(
+            `queries ${queriesRes.status} ${queriesRes.statusText}: ${qBody.slice(0, 600)}`
+          )
+        }
+        if (!pagesRes.ok) {
+          parts.push(`pages ${pagesRes.status} ${pagesRes.statusText}: ${pBody.slice(0, 600)}`)
+        }
+        const combined = parts.join(' | ')
+        const hint403 =
+          queriesRes.status === 403 || pagesRes.status === 403
+            ? searchConsole403Hint(combined, input.siteUrl)
+            : ''
+        throw new Error(`Search Console API request failed — ${combined}${hint403}`)
       }
 
       const queriesData = (await queriesRes.json()) as {
@@ -157,8 +208,9 @@ export class SearchConsoleMCPTool implements MCPTool<SearchConsoleInput, SearchC
         dateRange: { start: input.startDate, end: input.endDate },
       }
     } catch (err) {
-      console.warn('[SearchConsoleMCPTool] Real API failed, falling back to mock:', err)
-      return generateMockData(input)
+      console.error('[SearchConsoleMCPTool] Search Console API error:', err)
+      if (err instanceof Error) throw err
+      throw new Error(String(err))
     }
   }
 }

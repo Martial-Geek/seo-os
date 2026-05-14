@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { agentService } from '@/services/agent-service'
 
 export async function GET(req: NextRequest) {
@@ -19,8 +19,13 @@ export async function GET(req: NextRequest) {
 
     const runId = await agentService.startRun('scheduled')
 
-    // Fire and forget
-    agentService.executeRun(runId).catch(console.error)
+    after(async () => {
+      try {
+        await agentService.executeRun(runId)
+      } catch (err) {
+        console.error(`[cron/run] executeRun failed for ${runId}:`, err)
+      }
+    })
 
     return NextResponse.json({
       message: 'Scheduled run started',

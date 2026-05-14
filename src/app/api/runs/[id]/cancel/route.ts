@@ -7,6 +7,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+    if (!id || id === 'undefined') {
+      return NextResponse.json({ error: 'Invalid run id' }, { status: 400 })
+    }
 
     const run = await agentService.getRun(id)
     if (!run) {

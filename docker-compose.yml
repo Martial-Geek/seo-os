@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: uwais
+      POSTGRES_PASSWORD: uwais
+      POSTGRES_DB: seo_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - seo_os_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uwais -d seo_os"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  seo_os_pgdata:

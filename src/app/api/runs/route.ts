@@ -35,12 +35,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
+    const triggerRaw = body.triggerType ?? body.trigger
     const trigger: 'manual' | 'scheduled' =
-      body.trigger === 'scheduled' ? 'scheduled' : 'manual'
+      triggerRaw === 'scheduled' ? 'scheduled' : 'manual'
 
     const runId = await agentService.startRun(trigger)
 
-    return NextResponse.json({ runId }, { status: 201 })
+    return NextResponse.json({ id: runId, runId }, { status: 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })
