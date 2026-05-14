@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-pnpm --no-turbopack)",
+      "Bash(mkdir -p /tmp/seo-os-build)",
+      "Bash(npx create-next-app@latest /tmp/seo-os-build --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-pnpm --no-turbopack)",
+      "Read(//tmp/seo-os-build/**)",
+      "Bash(pnpm approve-builds *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm add *)",
+      "Bash(cp *)",
+      "Bash(npx tsc *)",
+      "Bash(pnpm type-check *)",
+      "Bash(pnpm build *)"
+    ]
+  }
+}
