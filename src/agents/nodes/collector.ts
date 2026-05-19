@@ -26,7 +26,7 @@ export async function collectorNode(
 
   const { startDate, endDate } = getDateRange()
   const siteUrl = process.env.SEARCH_CONSOLE_SITE_URL ?? 'https://example.com'
-  const propertyId = process.env.GA4_PROPERTY_ID ?? 'properties/123456789'
+  const propertyId = process.env.GA_PROPERTY_ID
 
   console.log(`[collectorNode] Collecting data for run ${runId}`)
 
@@ -96,7 +96,7 @@ export async function collectorNode(
 
     console.log(`[collectorNode] Collected analytics: ${gaData.sessions} sessions, ${gaData.pageviews} pageviews`)
   } else {
-    console.error('[collectorNode] Analytics failed:', analyticsResult.reason)
+    throw analyticsResult.reason
   }
 
   // Process Sanity content

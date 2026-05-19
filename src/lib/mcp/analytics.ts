@@ -74,20 +74,17 @@ export class AnalyticsMCPTool implements MCPTool<AnalyticsInput, AnalyticsData> 
   inputSchema = AnalyticsInputSchema
 
   async execute(input: AnalyticsInput): Promise<AnalyticsData> {
-    const hasCredentials =
-      process.env.GOOGLE_CLIENT_ID &&
-      process.env.GOOGLE_CLIENT_SECRET &&
-      process.env.GOOGLE_REFRESH_TOKEN &&
-      process.env.GA4_PROPERTY_ID
+    const missing = (
+      ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN', 'GA_PROPERTY_ID'] as const
+    ).filter((key) => !process.env[key])
 
-    if (!hasCredentials) {
-      console.log('[AnalyticsMCPTool] No credentials found, returning mock data')
-      return generateMockData(input)
+    if (missing.length > 0) {
+      throw new Error(`Missing required Google Analytics env vars: ${missing.join(', ')}`)
     }
 
     try {
       const accessToken = await refreshGoogleToken()
-      const propertyId = input.propertyId || process.env.GA4_PROPERTY_ID!
+      const propertyId = input.propertyId || process.env.GA_PROPERTY_ID!
 
       const requestBody = {
         dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
@@ -136,7 +133,10 @@ export class AnalyticsMCPTool implements MCPTool<AnalyticsInput, AnalyticsData> 
       ])
 
       if (!summaryRes.ok || !pagesRes.ok) {
-        throw new Error('Analytics API request failed')
+        const failedRes = !summaryRes.ok ? summaryRes : pagesRes
+        const label = !summaryRes.ok ? 'summary' : 'pages'
+        const body = await failedRes.text()
+        throw new Error(`Analytics API ${label} request failed (${failedRes.status}): ${body}`)
       }
 
       type GAMetricValue = { value: string }
@@ -190,8 +190,7 @@ export class AnalyticsMCPTool implements MCPTool<AnalyticsInput, AnalyticsData> 
         dateRange: { start: input.startDate, end: input.endDate },
       }
     } catch (err) {
-      console.warn('[AnalyticsMCPTool] Real API failed, falling back to mock:', err)
-      return generateMockData(input)
+      throw err instanceof Error ? err : new Error(String(err))
     }
   }
 }
