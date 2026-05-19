@@ -1,8 +1,11 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray, and } from 'drizzle-orm'
 import { db } from '@/db'
 import { proposedActions } from '@/db/schema'
 import { MemoryService } from '@/lib/memory/memory-service'
 import type { AgentState, AgentProposedAction } from '@/types'
+
+const MAX_ACTIVE_PROPOSALS = 14
+const GENERATION_BLOCKED_THRESHOLD = 7 // block new proposals above this many active
 
 const RISK_SCORE: Record<string, number> = {
   low: 1,
@@ -38,6 +41,36 @@ export async function plannerNode(
   if (state.proposed_actions.length === 0) {
     console.warn('[plannerNode] No proposed actions to plan')
     return {}
+  }
+
+  // Count active proposals globally (excluding this run's own proposals which are already in state)
+  const thisRunIds = state.proposed_actions.map((a) => a.id)
+  const globalActiveRows = await db
+    .select()
+    .from(proposedActions)
+    .where(
+      and(
+        inArray(proposedActions.status, ['pending', 'approved']),
+        ...(thisRunIds.length > 0 ? [] : [])
+      )
+    )
+  const globalActiveFromOtherRuns = globalActiveRows.filter(
+    (r) => !thisRunIds.includes(r.id)
+  ).length
+  const availableSlots = Math.max(0, MAX_ACTIVE_PROPOSALS - globalActiveFromOtherRuns)
+
+  if (availableSlots === 0) {
+    console.log(
+      `[plannerNode] Global active proposals (${globalActiveFromOtherRuns}) reached cap of ${MAX_ACTIVE_PROPOSALS}. Skipping all new proposals.`
+    )
+    // Mark all pending proposals for this run as skipped
+    if (runId && thisRunIds.length > 0) {
+      await db
+        .update(proposedActions)
+        .set({ status: 'skipped' })
+        .where(inArray(proposedActions.id, thisRunIds))
+    }
+    return { proposed_actions: [] }
   }
 
   const memoryService = new MemoryService(db)
@@ -100,10 +133,23 @@ export async function plannerNode(
     filteredActions.push(action)
   }
 
-  // Sort by impact score (descending)
-  const sortedActions = filteredActions.sort(
-    (a, b) => scoreAction(b) - scoreAction(a)
-  )
+  // Sort by impact score (descending) and cap to available slots
+  const sortedActions = filteredActions
+    .sort((a, b) => scoreAction(b) - scoreAction(a))
+    .slice(0, availableSlots)
+
+  // Mark over-cap proposals as skipped
+  const keptIds = new Set(sortedActions.map((a) => a.id))
+  const overCapIds = filteredActions
+    .filter((a) => !keptIds.has(a.id))
+    .map((a) => a.id)
+  if (runId && overCapIds.length > 0) {
+    await db
+      .update(proposedActions)
+      .set({ status: 'skipped' })
+      .where(inArray(proposedActions.id, overCapIds))
+    console.log(`[plannerNode] Capped ${overCapIds.length} over-limit proposals`)
+  }
 
   // Mark high-risk actions as requires_approval=true in DB
   for (const action of sortedActions) {

@@ -166,8 +166,8 @@ ${rejectedSuggestions.length > 0 ? rejectedSuggestions.join(', ') : 'None'}
 ${Object.values(ActionType).join(', ')}
 
 ## Action Payload Schemas
-- CREATE_BLOG: { title: string, slug: "kebab-case-string", outline: "single markdown string with all sections", target_keywords: string[], meta_description: string (max 160 chars), word_count_target: number, internal_links: string[] (URL strings only, e.g. ["/blog/related-post"]) }
-- UPDATE_METADATA: { external_id: "_id from the Existing Sanity Documents list above", title?: string, meta_description?: string (max 160 chars), og_title?: string, og_description?: string }
+- CREATE_BLOG: { title: string, slug: "kebab-case-string", outline: "single markdown string with all sections", target_keywords: string[], seo_description: string (max 160 chars), word_count_target: number, internal_links: string[] (URL strings only, e.g. ["/blog/related-post"]) }
+- UPDATE_METADATA: { external_id: "_id from the Existing Sanity Documents list above", title?: string, seo_title?: string (max 60 chars), seo_description?: string (max 160 chars), og_title?: string, og_description?: string }
 - GENERATE_OUTLINE: { title: string, target_keywords: string[], section_count: number, word_count_target: number, content_type: "how-to"|"listicle"|"pillar"|"comparison"|"review"|"news"|"guide"|"case-study" }
 - ADD_INTERNAL_LINKS: { source_id: "_id from the Existing Sanity Documents list above", links: [{ target_id: "_id from list", anchor_text: string, position: number }] }
 

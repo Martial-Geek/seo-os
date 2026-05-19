@@ -11,7 +11,7 @@ const AGENT_MODEL = process.env.SEO_AGENT_MODEL ?? 'claude-sonnet-4-6'
 
 function extractJSON(text: string): string {
   // Strip markdown code fences
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/s)
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (fenceMatch?.[1]) return fenceMatch[1].trim()
   // Fall back to outermost { … }
   const start = text.indexOf('{')

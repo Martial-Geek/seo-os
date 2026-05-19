@@ -189,7 +189,8 @@ export const AddInternalLinksSchema = z.object({
 export const UpdateMetadataSchema = z.object({
   external_id: z.string().min(1),
   title: z.string().min(1).max(500).optional(),
-  meta_description: z.string().min(1).max(160).optional(),
+  seo_title: z.string().min(1).max(500).optional(),
+  seo_description: z.string().min(1).max(160).optional(),
   og_title: z.string().min(1).max(500).optional(),
   og_description: z.string().min(1).max(300).optional(),
 })

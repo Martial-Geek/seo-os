@@ -17,7 +17,8 @@ export class UpdateMetadataHandler implements ToolHandler<UpdateMetadataPayload>
       const patch: Record<string, string> = {}
 
       if (payload.title) patch['title'] = payload.title
-      if (payload.meta_description) patch['metaDescription'] = payload.meta_description
+      if (payload.seo_title) patch['seoTitle'] = payload.seo_title
+      if (payload.seo_description) patch['seoDescription'] = payload.seo_description
       if (payload.og_title) patch['ogTitle'] = payload.og_title
       if (payload.og_description) patch['ogDescription'] = payload.og_description
 
@@ -44,7 +45,8 @@ export class UpdateMetadataHandler implements ToolHandler<UpdateMetadataPayload>
             title: payload.title ?? existing[0].title,
             metadata: {
               ...currentMetadata,
-              meta_description: payload.meta_description ?? currentMetadata['meta_description'],
+              seo_title: payload.seo_title ?? currentMetadata['seo_title'],
+              seo_description: payload.seo_description ?? currentMetadata['seo_description'],
               og_title: payload.og_title ?? currentMetadata['og_title'],
               og_description: payload.og_description ?? currentMetadata['og_description'],
               last_metadata_update: new Date().toISOString(),
